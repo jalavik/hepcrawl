@@ -13,9 +13,12 @@ from __future__ import absolute_import, print_function
 
 import os
 import urllib
+import re
 
 from scrapy import Request, Selector
 from scrapy.spiders import XMLFeedSpider
+from scrapy.utils.iterators import _body_or_str
+from scrapy.utils.python import re_rsearch
 
 from ..items import HEPRecord
 from ..loaders import HEPLoader
@@ -51,6 +54,7 @@ class BaseSpider(XMLFeedSpider):
 
     Example usage:
     scrapy crawl BASE -a source_file=file://`pwd`/tests/responses/base/test_record1_no_namespaces.xml -s "JSON_OUTPUT_DIR=tmp/"
+    scrapy crawl BASE -a source_file=file://`pwd`/tests/responses/base/test_record1.xml -s "JSON_OUTPUT_DIR=tmp/"
     
     TODO:
     *Namespaces not working, namespace removal not working. Test case has been stripped of namespaces manually :|
@@ -68,9 +72,10 @@ class BaseSpider(XMLFeedSpider):
     name = 'BASE'
     start_urls = [] #this will contain the links in the XML file
     pdf_link = [] #this will contain the direct pdf link, should be accessible from everywhere
-    #namespaces = [('dc', "http://purl.org/dc/elements/1.1/"), ("base_dc", "http://oai.base-search.net/base_dc/")] #how to get these to work?
+    namespaces = [('dc', "http://purl.org/dc/elements/1.1/"), ("base_dc", "http://oai.base-search.net/base_dc/")] #are these necessary?
     iterator = 'iternodes'  # This is actually unnecessary, since it's the default value, REMOVE?
     itertag = 'record'
+    
     
     custom_settings = {
         #'ITEM_PIPELINES': {'HEPcrawl_BASE.pipelines.HepCrawlPipeline': 100,},
@@ -87,13 +92,13 @@ class BaseSpider(XMLFeedSpider):
         """Construct BASE spider"""
         super(BaseSpider, self).__init__(*args, **kwargs)
         self.source_file = source_file
-        self.target_folder = "tmp/BASE/"
+        self.target_folder = "tmp/"
         if not os.path.exists(self.target_folder):
             os.makedirs(self.target_folder)
 
     def start_requests(self):
         """Default starting point for scraping shall be the local XML file"""
-        yield Request(self.source_file)
+        yield Request(self.source_file, callback=self.check_direct_link)
     
     
     def split_fullname(self, author):
@@ -120,46 +125,37 @@ class BaseSpider(XMLFeedSpider):
         if node.xpath('//creator'):
             for author in node.xpath('//creator/text()'):
                 surname, given_names = self.split_fullname(author.extract())
-                authors.append({
-                            'surname': surname,
-                            'given_names': given_names,
-                            #'full_name': author.extract(), #should we only use full_name? 
-                            'affiliations': "", #need some pdf parsing to get this?
-                            'email': ""
-                            })
         
         elif node.xpath("//contributor"):
             for author in node.xpath("//contributor/text()"):
                 if any("author" in contr.extract().lower() for contr in node.xpath("//contributor/text()")):
                     surname, given_names = self.split_fullname(author.extract())
-                    authors.append({
+        else:
+            surname = ""
+            given_names = ""
+
+        authors.append({
                         'surname': surname,
                         'given_names': given_names,
-                        'affiliations': " ",
+                        #'full_name': author.extract(), #should we only use full_name? 
+                        'affiliations': [""], #need some pdf parsing to get this?
                         'email': " "
                         })
-        else:
-            authors.append({
-                        'surname': "",
-                        'given_names': "",
-                        'affiliations': " ",
-                        'email': " "
-                        })
-        
         return authors
-    #PLZ have a look at this code, too much repeat (last refactoring broke it..)
     
     
     def get_start_urls(self, node):
-        """
-        Looks through all the different urls in the xml and
+        """Looks through all the different urls in the xml and
         returns a deduplicated list of these urls. Urls might
-        be stored in identifier, relation, or link element
+        be stored in identifier, relation, or link element.
+        Namespace removal wouldn't work.
         """
-        identifier = [el.extract() for el in node.xpath("//identifier/text()") 
+
+        identifier = [el.extract() for el in node.xpath("//*[local-name()='identifier']/text()") 
                       if "http" in el.extract().lower() and "front" not in el.extract().lower()]
-        relation = [s for s in " ".join(node.xpath("//relation/text()").extract()).split() if "http" in s] #this element is messy
-        link = node.xpath("//link/text()").extract()
+        relation = [s for s in " ".join(node.xpath("//*[local-name()='relation']/text()").extract()).split() if "http" in s] #this element is messy
+        link = node.xpath("//*[local-name()='link']/text()").extract()
+        
         start_urls = list(set(identifier+relation+link))
         return start_urls
         
@@ -200,40 +196,42 @@ class BaseSpider(XMLFeedSpider):
         return []
     
 
-    
+    #first we have to check if direct link exists
+    def check_direct_link(self, node):
+        #_register_namespaces(node)
+        #node.remove_namespaces() #WHY IS THIS NOT WORKIN?
+        
+        #First let's check if direct link exists
+        self.start_urls = self.get_start_urls(node)
+        print(self.start_urls)
+        self.pdf_link = self.find_direct_link()
+        print(self.pdf_link)
+        
+        if self.pdf_link:
+            return Request(self.source_file)
+        #Then if direct link does not exists, scrape the splash url for more links
+        else:
+            link = self.start_urls[0] #probably all links lead to same place, so use first but WHAT IF NOT??
+            return Request(link, callback = self.scrape_for_pdf) #send a request to scrape_for_pdf() to scrape the url
+            
     
     
     #this should generate a HEP record, ie. Items that can be put directly into JSON
     def parse_node(self, response, node):
         """Parse a WSP XML file into a HEP record."""
-        #node.remove_namespaces() #WHY IS THIS NOT WORKIN?
         
-        #First let's check if direct link exists
-        #This will also be True if returning from scrape_for_pdf()
-        #so will be skipped
-        if not self.pdf_link:
-            self.start_urls = self.get_start_urls(node)
-            print(self.start_urls)
-            self.pdf_link = self.find_direct_link()
-            print(self.pdf_link)
-        
-        #Then if direct link does not exists, scrape the splash url for more links
-        #This will also be True if returning from scrape_for_pdf()
-        #so will be skipped
-        if not self.pdf_link:
-            link = self.start_urls[0] #probably all links lead to same place, so use first but WHAT IF NOT??
-            return Request(link, callback = self.scrape_for_pdf) #send a request to scrape_for_pdf() to scrape the url
-
+        node.remove_namespaces() #WHY IS THIS NOT WORKIN?
         
         #When we finally have a direct pdf link (or it doesn't exist??), 
         #create scrapy Items and send them to the pipeline
-        record = HEPLoader(item=HEPRecord(), selector=node, response=response)
+        record = HEPLoader(item=HEPRecord(), selector=node, response=response)        
         
         record.add_value('files', self.pdf_link)            
         record.add_xpath('abstract', '//description/text()')
         record.add_xpath('title', '//title/text()')
         record.add_xpath('date_published', '//date/text()')
-        record.add_xpath('source', '//collname/text()')      
+        record.add_xpath('source', '//collname/text()')    
+        
         authors = self.get_authors(node)
         record.add_value("authors", authors)  
         #still missing: language, doctype ("PhD")... what else?
@@ -249,6 +247,8 @@ class BaseSpider(XMLFeedSpider):
         This will yield a request to scrape the file again
         after putting the direct link to the class variable self.pdf_link 
         """
+        #item = response.meta['item']#??
+        
         from urlparse import urljoin
         selector = Selector(response)
         all_links = selector.xpath("*//a/@href").extract()
@@ -263,8 +263,49 @@ class BaseSpider(XMLFeedSpider):
                 self.pdf_link.append( urljoin(domain, link) )
         print(self.pdf_link)
         #yield Request(self.source_file, callback = self.parse_node) #y dis not work?
-        yield Request(self.source_file) # yield a request to scrape the original file again ("go back to square one")
+        return Request(self.source_file) # yield a request to scrape the original file again ("go back to square one")
 
+    
+    #I'm trying to override this method to be able to really ignore namespaces
+    #not really necessary, see _iternodes() below
+    #def xmliter(self, obj, nodename):
+        #"""Return a iterator of Selector's over all nodes of a XML document,
+        #given tha name of the node to iterate. Useful for parsing XML feeds.
 
+        #obj can be:
+        #- a Response object
+        #- a unicode string
+        #- a string encoded as utf-8
+        #"""
+        #nodename_patt = re.escape(nodename)
+
+        #HEADER_START_RE = re.compile(r'^(.*?)<\s*%s(?:\s|>)' % nodename_patt, re.S)
+        #HEADER_END_RE = re.compile(r'<\s*/%s\s*>' % nodename_patt, re.S)
+        #text = _body_or_str(obj)
+
+        #header_start = re.search(HEADER_START_RE, text)
+        #header_start = header_start.group(1).strip() if header_start else ''
+        #header_end = re_rsearch(HEADER_END_RE, text)
+        #header_end = text[header_end[1]:].strip() if header_end else ''
         
+
+        #r = re.compile(r"<{0}[\s>].*?</{0}>".format(nodename_patt), re.DOTALL)
+        #for match in r.finditer(text):
+            #nodetext = header_start + match.group() + header_end
+            ##yield Selector(text=nodetext, type='xml').xpath('//' + nodename)[0]
+            #yield Selector(text=text, type='xml').xpath("//*[local-name()='record']")[0] #this will skip the namespaces!!
+    
+        
+
+    #try to override this to work properly with record tag and _really_ ignore namespaces
+    #there's only one node per file, so no need to use for loops
+    #see original _iternodes() in XMLFeedSpider
+    #better ideas to ignore namespaces are welcome!
+    def _iternodes(self, response):
+        text = _body_or_str(response)
+        node = Selector(text=text, type='xml').xpath(".//*[local-name() =   '" + self.itertag  +"']" )[0]
+        yield node
+
+    
+
 
