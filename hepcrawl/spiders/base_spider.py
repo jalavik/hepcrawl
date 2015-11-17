@@ -13,9 +13,12 @@ from __future__ import absolute_import, print_function
 
 import os
 import urllib
+import re
 
 from scrapy import Request, Selector
 from scrapy.spiders import XMLFeedSpider
+from scrapy.utils.iterators import _body_or_str
+from scrapy.utils.python import re_rsearch
 
 from ..items import HEPRecord
 from ..loaders import HEPLoader
@@ -51,6 +54,7 @@ class BaseSpider(XMLFeedSpider):
 
     Example usage:
     scrapy crawl BASE -a source_file=file://`pwd`/tests/responses/base/test_record1_no_namespaces.xml -s "JSON_OUTPUT_DIR=tmp/"
+    scrapy crawl BASE -a source_file=file://`pwd`/tests/responses/base/test_record1.xml -s "JSON_OUTPUT_DIR=tmp/"
     
     TODO:
     *Namespaces not working, namespace removal not working. Test case has been stripped of namespaces manually :|
@@ -68,9 +72,10 @@ class BaseSpider(XMLFeedSpider):
     name = 'BASE'
     start_urls = [] #this will contain the links in the XML file
     pdf_link = [] #this will contain the direct pdf link, should be accessible from everywhere
-    #namespaces = [('dc', "http://purl.org/dc/elements/1.1/"), ("base_dc", "http://oai.base-search.net/base_dc/")] #how to get these to work?
+    namespaces = [('dc', "http://purl.org/dc/elements/1.1/"), ("base_dc", "http://oai.base-search.net/base_dc/")] #are these necessary?
     iterator = 'iternodes'  # This is actually unnecessary, since it's the default value, REMOVE?
     itertag = 'record'
+    
     
     custom_settings = {
         #'ITEM_PIPELINES': {'HEPcrawl_BASE.pipelines.HepCrawlPipeline': 100,},
@@ -87,7 +92,7 @@ class BaseSpider(XMLFeedSpider):
         """Construct BASE spider"""
         super(BaseSpider, self).__init__(*args, **kwargs)
         self.source_file = source_file
-        self.target_folder = "tmp/BASE/"
+        self.target_folder = "tmp/"
         if not os.path.exists(self.target_folder):
             os.makedirs(self.target_folder)
 
@@ -206,7 +211,9 @@ class BaseSpider(XMLFeedSpider):
     #this should generate a HEP record, ie. Items that can be put directly into JSON
     def parse_node(self, response, node):
         """Parse a WSP XML file into a HEP record."""
-        #node.remove_namespaces() #WHY IS THIS NOT WORKIN?
+        
+        #_register_namespaces(node)
+        node.remove_namespaces() #WHY IS THIS NOT WORKIN?
         
         #First let's check if direct link exists
         #This will also be True if returning from scrape_for_pdf()
@@ -229,11 +236,14 @@ class BaseSpider(XMLFeedSpider):
         #create scrapy Items and send them to the pipeline
         record = HEPLoader(item=HEPRecord(), selector=node, response=response)
         
+        
+        
         record.add_value('files', self.pdf_link)            
         record.add_xpath('abstract', '//description/text()')
         record.add_xpath('title', '//title/text()')
         record.add_xpath('date_published', '//date/text()')
-        record.add_xpath('source', '//collname/text()')      
+        record.add_xpath('source', '//collname/text()')    
+        
         authors = self.get_authors(node)
         record.add_value("authors", authors)  
         #still missing: language, doctype ("PhD")... what else?
@@ -265,6 +275,46 @@ class BaseSpider(XMLFeedSpider):
         #yield Request(self.source_file, callback = self.parse_node) #y dis not work?
         yield Request(self.source_file) # yield a request to scrape the original file again ("go back to square one")
 
+    
+    #I'm trying to override this method to be able to really ignore namespaces
+    #not really necessary, see _iternodes() below
+    #def xmliter(self, obj, nodename):
+        #"""Return a iterator of Selector's over all nodes of a XML document,
+        #given tha name of the node to iterate. Useful for parsing XML feeds.
 
+        #obj can be:
+        #- a Response object
+        #- a unicode string
+        #- a string encoded as utf-8
+        #"""
+        #nodename_patt = re.escape(nodename)
+
+        #HEADER_START_RE = re.compile(r'^(.*?)<\s*%s(?:\s|>)' % nodename_patt, re.S)
+        #HEADER_END_RE = re.compile(r'<\s*/%s\s*>' % nodename_patt, re.S)
+        #text = _body_or_str(obj)
+
+        #header_start = re.search(HEADER_START_RE, text)
+        #header_start = header_start.group(1).strip() if header_start else ''
+        #header_end = re_rsearch(HEADER_END_RE, text)
+        #header_end = text[header_end[1]:].strip() if header_end else ''
         
+
+        #r = re.compile(r"<{0}[\s>].*?</{0}>".format(nodename_patt), re.DOTALL)
+        #for match in r.finditer(text):
+            #nodetext = header_start + match.group() + header_end
+            ##yield Selector(text=nodetext, type='xml').xpath('//' + nodename)[0]
+            #yield Selector(text=text, type='xml').xpath("//*[local-name()='record']")[0] #this will skip the namespaces!!
+    
+        
+
+    #try to override this to work properly with record tag and _really_ ignore namespaces
+    #there's only one node per file, so no need to use for loops
+    #see original _iternodes() in XMLFeedSpider
+    def _iternodes(self, response):
+        text = _body_or_str(response)
+        node = Selector(text=text, type='xml').xpath(".//*[local-name() =   '" + self.itertag  +"']" )[0]
+        yield node
+
+    
+
 
