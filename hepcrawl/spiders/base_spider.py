@@ -98,7 +98,7 @@ class BaseSpider(XMLFeedSpider):
 
     def start_requests(self):
         """Default starting point for scraping shall be the local XML file"""
-        yield Request(self.source_file)
+        yield Request(self.source_file, callback=check_direct_link)
     
     
     def split_fullname(self, author):
@@ -129,8 +129,8 @@ class BaseSpider(XMLFeedSpider):
                             'surname': surname,
                             'given_names': given_names,
                             #'full_name': author.extract(), #should we only use full_name? 
-                            'affiliations': "", #need some pdf parsing to get this?
-                            'email': ""
+                            'affiliations': ["jaa"], #need some pdf parsing to get this?
+                            #'email': ""
                             })
         
         elif node.xpath("//contributor"):
@@ -140,15 +140,15 @@ class BaseSpider(XMLFeedSpider):
                     authors.append({
                         'surname': surname,
                         'given_names': given_names,
-                        'affiliations': " ",
+                        'affiliations': [""],
                         'email': " "
                         })
         else:
             authors.append({
                         'surname': "",
-                        'given_names': "",
-                        'affiliations': " ",
-                        'email': " "
+                        'given_names': [""],
+                        'affiliations': [""],
+                        'email': ""
                         })
         
         return authors
@@ -205,38 +205,34 @@ class BaseSpider(XMLFeedSpider):
         return []
     
 
-    
+    #first we have to check if direct link exists
+    def check_direct_link(self, response, node):
+        #_register_namespaces(node)
+        node.remove_namespaces() #WHY IS THIS NOT WORKIN?
+        
+        #First let's check if direct link exists
+        self.start_urls = self.get_start_urls(node)
+        print(self.start_urls)
+        self.pdf_link = self.find_direct_link()
+        print(self.pdf_link)
+        
+        if self.pdf_link:
+            return Request(self.source_file)
+        #Then if direct link does not exists, scrape the splash url for more links
+        else:
+            link = self.start_urls[0] #probably all links lead to same place, so use first but WHAT IF NOT??
+            return Request(link, callback = self.scrape_for_pdf) #send a request to scrape_for_pdf() to scrape the url
+            
     
     
     #this should generate a HEP record, ie. Items that can be put directly into JSON
     def parse_node(self, response, node):
         """Parse a WSP XML file into a HEP record."""
         
-        #_register_namespaces(node)
-        node.remove_namespaces() #WHY IS THIS NOT WORKIN?
-        
-        #First let's check if direct link exists
-        #This will also be True if returning from scrape_for_pdf()
-        #so will be skipped
-        if not self.pdf_link:
-            self.start_urls = self.get_start_urls(node)
-            print(self.start_urls)
-            self.pdf_link = self.find_direct_link()
-            print(self.pdf_link)
-        
-        #Then if direct link does not exists, scrape the splash url for more links
-        #This will also be True if returning from scrape_for_pdf()
-        #so will be skipped
-        if not self.pdf_link:
-            link = self.start_urls[0] #probably all links lead to same place, so use first but WHAT IF NOT??
-            return Request(link, callback = self.scrape_for_pdf) #send a request to scrape_for_pdf() to scrape the url
-
         
         #When we finally have a direct pdf link (or it doesn't exist??), 
         #create scrapy Items and send them to the pipeline
-        record = HEPLoader(item=HEPRecord(), selector=node, response=response)
-        
-        
+        record = HEPLoader(item=HEPRecord(), selector=node, response=response)        
         
         record.add_value('files', self.pdf_link)            
         record.add_xpath('abstract', '//description/text()')
@@ -259,6 +255,8 @@ class BaseSpider(XMLFeedSpider):
         This will yield a request to scrape the file again
         after putting the direct link to the class variable self.pdf_link 
         """
+        #item = response.meta['item']#??
+        
         from urlparse import urljoin
         selector = Selector(response)
         all_links = selector.xpath("*//a/@href").extract()
@@ -273,7 +271,7 @@ class BaseSpider(XMLFeedSpider):
                 self.pdf_link.append( urljoin(domain, link) )
         print(self.pdf_link)
         #yield Request(self.source_file, callback = self.parse_node) #y dis not work?
-        yield Request(self.source_file) # yield a request to scrape the original file again ("go back to square one")
+        return Request(self.source_file) # yield a request to scrape the original file again ("go back to square one")
 
     
     #I'm trying to override this method to be able to really ignore namespaces
