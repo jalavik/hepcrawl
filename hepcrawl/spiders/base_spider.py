@@ -310,6 +310,7 @@ class BaseSpider(XMLFeedSpider):
     #try to override this to work properly with record tag and _really_ ignore namespaces
     #there's only one node per file, so no need to use for loops
     #see original _iternodes() in XMLFeedSpider
+    #better ideas to ignore namespaces are welcome!
     def _iternodes(self, response):
         text = _body_or_str(response)
         node = Selector(text=text, type='xml').xpath(".//*[local-name() =   '" + self.itertag  +"']" )[0]
