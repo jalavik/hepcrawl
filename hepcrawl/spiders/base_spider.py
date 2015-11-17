@@ -98,7 +98,7 @@ class BaseSpider(XMLFeedSpider):
 
     def start_requests(self):
         """Default starting point for scraping shall be the local XML file"""
-        yield Request(self.source_file, callback=check_direct_link)
+        yield Request(self.source_file, callback=self.check_direct_link)
     
     
     def split_fullname(self, author):
@@ -125,46 +125,37 @@ class BaseSpider(XMLFeedSpider):
         if node.xpath('//creator'):
             for author in node.xpath('//creator/text()'):
                 surname, given_names = self.split_fullname(author.extract())
-                authors.append({
-                            'surname': surname,
-                            'given_names': given_names,
-                            #'full_name': author.extract(), #should we only use full_name? 
-                            'affiliations': ["jaa"], #need some pdf parsing to get this?
-                            #'email': ""
-                            })
         
         elif node.xpath("//contributor"):
             for author in node.xpath("//contributor/text()"):
                 if any("author" in contr.extract().lower() for contr in node.xpath("//contributor/text()")):
                     surname, given_names = self.split_fullname(author.extract())
-                    authors.append({
+        else:
+            surname = ""
+            given_names = ""
+
+        authors.append({
                         'surname': surname,
                         'given_names': given_names,
-                        'affiliations': [""],
+                        #'full_name': author.extract(), #should we only use full_name? 
+                        'affiliations': [""], #need some pdf parsing to get this?
                         'email': " "
                         })
-        else:
-            authors.append({
-                        'surname': "",
-                        'given_names': [""],
-                        'affiliations': [""],
-                        'email': ""
-                        })
-        
         return authors
-    #PLZ have a look at this code, too much repeat (last refactoring broke it..)
     
     
     def get_start_urls(self, node):
-        """
-        Looks through all the different urls in the xml and
+        """Looks through all the different urls in the xml and
         returns a deduplicated list of these urls. Urls might
-        be stored in identifier, relation, or link element
+        be stored in identifier, relation, or link element.
+        Namespace removal wouldn't work.
         """
-        identifier = [el.extract() for el in node.xpath("//identifier/text()") 
+
+        identifier = [el.extract() for el in node.xpath("//*[local-name()='identifier']/text()") 
                       if "http" in el.extract().lower() and "front" not in el.extract().lower()]
-        relation = [s for s in " ".join(node.xpath("//relation/text()").extract()).split() if "http" in s] #this element is messy
-        link = node.xpath("//link/text()").extract()
+        relation = [s for s in " ".join(node.xpath("//*[local-name()='relation']/text()").extract()).split() if "http" in s] #this element is messy
+        link = node.xpath("//*[local-name()='link']/text()").extract()
+        
         start_urls = list(set(identifier+relation+link))
         return start_urls
         
@@ -206,9 +197,9 @@ class BaseSpider(XMLFeedSpider):
     
 
     #first we have to check if direct link exists
-    def check_direct_link(self, response, node):
+    def check_direct_link(self, node):
         #_register_namespaces(node)
-        node.remove_namespaces() #WHY IS THIS NOT WORKIN?
+        #node.remove_namespaces() #WHY IS THIS NOT WORKIN?
         
         #First let's check if direct link exists
         self.start_urls = self.get_start_urls(node)
@@ -229,6 +220,7 @@ class BaseSpider(XMLFeedSpider):
     def parse_node(self, response, node):
         """Parse a WSP XML file into a HEP record."""
         
+        node.remove_namespaces() #WHY IS THIS NOT WORKIN?
         
         #When we finally have a direct pdf link (or it doesn't exist??), 
         #create scrapy Items and send them to the pipeline
