@@ -62,16 +62,17 @@ class BaseSpider(XMLFeedSpider):
     *Namespaces are ignored with brute force. There are better ways?
     *Is the JSON pipeline writing unicode?
     *JSON pipeline is printing an extra comma at the end of the file.
-    or it's not printing commas between records
+    (or it's not printing commas between records)
     *Some Items missing (language, what else?)
     *Testing of the direct PDF link is not working. The tester doesn't understand
      multiple requests?
     *Needs more testing with different XML files
-    *CALtech thesis server was asking for a password?
-    *It's consistently getting only 184 records when using a test file of 1000 records??
+    *CALtech thesis server was asking for a password
+    *It's consistently getting only 184 records when using a test file of 1000 records!
     *It works when using smaller files.
     *Testing doesn't work, because parse_node() is not returning items! Is this
-    the wrong way to go? How else can I iterate through all the records?
+    the wrong way to go? How else can I iterate through all the records? Or should
+    the testing be done differently?
 
 
     Happy crawling!
@@ -79,20 +80,19 @@ class BaseSpider(XMLFeedSpider):
 
     name = 'BASE'
     start_urls = []  # This will contain the links in the XML file
-    namespaces = [('dc', "http://purl.org/dc/elements/1.1/"), ("base_dc", "http://oai.base-search.net/base_dc/")]  # Are these necessary?
-    iterator = 'iternodes'  # This is actually unnecessary, since it's the default value, REMOVE?
+    # This is actually unnecessary, since it's the default value, REMOVE?
+    iterator = 'iternodes'
     itertag = 'record'
     download_delay = 5  # Is this a good value and how to make this domain specific?
 
     # This way you can scrape twice: otherwise duplicate requests are filtered:
     custom_settings = {'DUPEFILTER_CLASS': 'scrapy.dupefilters.BaseDupeFilter',
-                       'MAX_CONCURRENT_REQUESTS_PER_DOMAIN' : 5}  # Does this help at all?
-                        #ALSO TRY TO disable cookies?
-
+                       'MAX_CONCURRENT_REQUESTS_PER_DOMAIN': 5}  # Does this help at all?
+    # ALSO TRY TO disable cookies?
 
     import logging
     logging.basicConfig(level=logging.DEBUG, filename="baselog.log", filemode="w",
-                            format="%(asctime)-15s %(levelname)-8s %(message)s")
+                        format="%(asctime)-15s %(levelname)-8s %(message)s")
     logger = logging.getLogger(__name__)
 
     def __init__(self, source_file=None, *args, **kwargs):
@@ -102,7 +102,6 @@ class BaseSpider(XMLFeedSpider):
         self.target_folder = "tmp/"  # Change this in the final version to "/tmp/BASE"
         if not os.path.exists(self.target_folder):
             os.makedirs(self.target_folder)
-
 
     def start_requests(self):
         """Default starting point for scraping shall be the local XML file"""
@@ -133,7 +132,8 @@ class BaseSpider(XMLFeedSpider):
         elif node.xpath("//contributor"):
             for author in node.xpath("//contributor/text()"):
                 if any("author" in contr.extract().lower() for contr in node.xpath("//contributor/text()")):
-                    surname, given_names = self.split_fullname(author.extract())
+                    surname, given_names = self.split_fullname(
+                        author.extract())
         else:
             surname = ""
             given_names = ""
@@ -141,7 +141,8 @@ class BaseSpider(XMLFeedSpider):
         authors.append({'surname': surname,
                         'given_names': given_names,
                         # 'full_name': author.extract(), # Should we only use full_name?
-                        'affiliations': [{"value": ""}],  # Need some pdf scraping to get this?
+                        # Need some pdf scraping to get this?
+                        'affiliations': [{"value": ""}],
                         'email': " "
                         })
         return authors
@@ -155,8 +156,8 @@ class BaseSpider(XMLFeedSpider):
         """
 
         identifier = [el.extract() for el in node.xpath("//*[local-name()='identifier']/text()")
-                      if "http" in el.extract().lower() and "front" not in el.extract().lower() 
-                      and "jpg" not in el.extract().lower() ]
+                      if "http" in el.extract().lower() and "front" not in el.extract().lower()
+                      and "jpg" not in el.extract().lower()]
         relation = [s for s in " ".join(node.xpath("//*[local-name()='relation']/text()").extract()).split() if "http" in s
                     and "jpg" not in s.lower()]
         link = node.xpath("//*[local-name()='link']/text()").extract()
@@ -190,14 +191,14 @@ class BaseSpider(XMLFeedSpider):
                 print("MIME type: ", self.get_mime_type(link))
                 if "pdf" in self.get_mime_type(link) and "jpg" not in link.lower():
                     print("Found direct link: ", link)
-                    direct_link.append(urllib.urlopen(link).geturl())  # Possibly redirected url
+                    # Possibly redirected url
+                    direct_link.append(urllib.urlopen(link).geturl())
         if direct_link:
             self.logger.info("Found direct link(s): %s", direct_link)
         else:
             self.logger.info("Didn't find direct link to PDF")
 
         return direct_link
-
 
     def parse_node(self, response, node):
         """This function will iterate through all the record nodes.
@@ -223,27 +224,25 @@ class BaseSpider(XMLFeedSpider):
         ---> result: 432
         """
 
-
         if direct_link:
             #print("HERE'S THE DIRECT LINK: ", direct_link)
             #print("NOW WE SHOULD SEND A direct link REQUEST to parse the XML node")
             print("source file: ", self.source_file)
             request = Request(self.source_file, callback=self.parse_with_link)
-            # If we don't send these via request META, 
+            # If we don't send these via request META,
             # there will be some very strange effects
             # (the parser will forget the right values):
             request.meta["node"] = node
-            request.meta["direct_link"] = direct_link 
+            request.meta["direct_link"] = direct_link
             request.meta["start_urls"] = self.start_urls
             return request
         else:
-            link = self.start_urls[0]  # Probably all links lead to same place, so use first but WHAT IF NOT??
+            link = self.start_urls[0] # Probably all links lead to same place, what if not?
             #print("NOW WE SHOULD SEND A parse pdf REQUEST to look for the pdf link")
             request = Request(link, callback=self.scrape_for_pdf)
             request.meta["node"] = node
             request.meta["start_urls"] = self.start_urls
             return request
-
 
     def parse_with_link(self, response):
         """If direct link exists, parse_node() sends a request here to parse
@@ -252,25 +251,27 @@ class BaseSpider(XMLFeedSpider):
         """
 
         node = response.meta["node"]
-        direct_link = response.meta["direct_link"] 
-        start_urls = response.meta["start_urls"] 
+        direct_link = response.meta["direct_link"]
+        start_urls = response.meta["start_urls"]
         record = HEPLoader(item=HEPRecord(), selector=node, response=response)
         authors = self.get_authors(node)
 
-        
         try:
             print("Now parsing author: ", authors)
-            print("HERE'S THE DIRECT LINK again: ", direct_link)
+            #print("HERE'S THE DIRECT LINK again: ", direct_link)
             record.add_value('files', direct_link)
             record.add_value('url', start_urls)
         except:
-            self.logger.warning("There's some problem with adding direct links.")
+            self.logger.warning(
+                "There's some problem with adding direct links.")
             pass
         record.add_xpath('abstract', '//description/text()')
         record.add_xpath('title', '//title/text()')
         record.add_xpath('date_published', '//date/text()')
         record.add_xpath('source', '//collname/text()')
-        record.add_value('thesis', {'degree_type': 'PhD'})  # Should this be able to scrape all kinds of publications?
+        # Should this be able to scrape all kinds of publications?
+        # Now does only theses:
+        record.add_value('thesis', {'degree_type': 'PhD'})
         # Items still missing: language,... what else?
 
         try:
@@ -286,7 +287,6 @@ class BaseSpider(XMLFeedSpider):
             self.logger.info("start_urls[0]: %s", start_urls[0])
             self.logger.critical("Something is wrong! Could not return item.")
 
-
     def scrape_for_pdf(self, response):
         """If direct link didn't exists, parse_node() will yield a request 
         here to scrape the urls. This will find a direct pdf link from a
@@ -296,7 +296,7 @@ class BaseSpider(XMLFeedSpider):
         from urlparse import urljoin
 
         pdf_link = []
-        node = response.meta["node"]  # It's important to remember the correct node.
+        node = response.meta["node"]  # Remember the correct node.
         start_urls = response.meta["start_urls"]  # And start_urls.
 
         authors = self.get_authors(node)
@@ -304,12 +304,12 @@ class BaseSpider(XMLFeedSpider):
 
         selector = Selector(response)
         all_links = selector.xpath("*//a/@href").extract()
-        # Take only pdf-links, join relative urls with domain, and remove possible duplicates:
+        # Take only pdf-links, join relative urls with domain, 
+        # and remove possible duplicates:
         domain = self.parse_domain(response.url)
         all_links = sorted(list(set(
-            [urljoin(domain, link) for link in all_links if "pdf" in link.lower() 
+            [urljoin(domain, link) for link in all_links if "pdf" in link.lower()
              and "jpg" not in link.lower()])))
-        # all_links = sorted( list( set( [urljoin(domain, link) for link in all_links ] ) ) ) # This is too slow!
         for link in all_links:
             # Extract only links with pdf in them (checks also headers):
             pdf = "pdf" in self.get_mime_type(link) or "pdf" in link.lower()
@@ -323,8 +323,6 @@ class BaseSpider(XMLFeedSpider):
         request.meta["start_urls"] = start_urls
 
         return request
-
-
 
     def xmliter(self, obj, nodename):
         """Overriding this function to work properly with record itertag 
@@ -343,7 +341,8 @@ class BaseSpider(XMLFeedSpider):
         """
         nodename_patt = re.escape(nodename)
 
-        HEADER_START_RE = re.compile(r'^(.*?)<\s*%s(?:\s|>)' % nodename_patt, re.S)
+        HEADER_START_RE = re.compile(
+            r'^(.*?)<\s*%s(?:\s|>)' % nodename_patt, re.S)
         HEADER_END_RE = re.compile(r'<\s*/%s\s*>' % nodename_patt, re.S)
         text = _body_or_str(obj)
 
@@ -357,8 +356,7 @@ class BaseSpider(XMLFeedSpider):
             nodetext = header_start + match.group() + header_end
             yield Selector(text=nodetext, type='xml').xpath(
                 ".//*[local-name() =   '" + self.itertag + "']"
-                )[0]  # Here I have changed the xpath
-
+            )[0]  # Here I have changed the xpath
 
     def _iternodes(self, response):
         """Overriding this function to work properly with record itertag 
@@ -367,12 +365,6 @@ class BaseSpider(XMLFeedSpider):
         Works with single or multiple records per XML file
         Better ideas to ignore namespaces are welcome!
         """
-        #text = _body_or_str(response)
-        #node = Selector(text=text, type='xml')
-        ##node = Selector(response)
-        #for record in node.xpath(".//*[local-name() =   '" + self.itertag + "']"):
-            #yield record
-
         for node in self.xmliter(response, self.itertag):
             self._register_namespaces(node)
             yield node

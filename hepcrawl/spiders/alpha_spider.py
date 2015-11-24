@@ -53,7 +53,7 @@ class AlphaSpider(CrawlSpider):
     *Is the JSON pipeline writing unicode?
     *JSON pipeline does not have commas between records
     *Some Items missing
-    *Testing is broken. Has to do something with 
+    *Testing is broken. Has to do something with
     node = Selector(response, type="html")
     for thesis in node.xpath(self.itertag):
 
@@ -74,10 +74,10 @@ class AlphaSpider(CrawlSpider):
         if not os.path.exists(self.target_folder):
             os.makedirs(self.target_folder)
 
-    #def start_requests(self):
-        #"""You can test the spider with local files with this.
-        #Uncomment this function when crawling the test page."""
-        #yield Request(self.source_file)
+    # def start_requests(self):
+        # """You can test the spider with local files with this.
+        # Uncomment this function when crawling the test page."""
+        # yield Request(self.source_file)
 
     def split_fullname(self, author):
         """If we want to split the author name to surname and given names.
@@ -184,7 +184,7 @@ class AlphaSpider(CrawlSpider):
                 record.add_value('date_published', self.author_data[0]['year'])
             except:
                 print("Author data couldn't be found. "
-                        "There's probably something wrong with the HTML structure, check the source")
+                    "There's probably something wrong with the HTML structure, check the source")
                 pass
 
             # Abstract:
@@ -199,7 +199,7 @@ class AlphaSpider(CrawlSpider):
                 record.add_value("abstract", abstract)
             except:
                 print("Abstract couldn't be found. "
-                        "Theres's probably something wrong with the HTML structure, check the source")
+                    "Theres's probably something wrong with the HTML structure, check the source")
                 pass
 
             # PDF link:
