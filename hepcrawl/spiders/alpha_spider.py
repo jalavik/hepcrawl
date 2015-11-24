@@ -53,9 +53,6 @@ class AlphaSpider(CrawlSpider):
     *Is the JSON pipeline writing unicode?
     *JSON pipeline does not have commas between records
     *Some Items missing
-    *Testing is broken. Has to do something with
-    node = Selector(response, type="html")
-    for thesis in node.xpath(self.itertag):
 
 
     Happy crawling!
