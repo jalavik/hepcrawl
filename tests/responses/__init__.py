@@ -9,7 +9,7 @@
 
 import os
 
-from scrapy.http import Response, Request
+from scrapy.http import XmlResponse, Request
 
 
 def fake_response_from_file(file_name, url=None):
@@ -33,10 +33,10 @@ def fake_response_from_file(file_name, url=None):
 
     file_content = open(file_path, 'r').read()
 
-    response = Response(
+    response = XmlResponse(
         url=url,
         request=request,
-        body=file_content
+        body=file_content,
+        encoding='utf-8',
     )
-    response.encoding = 'utf-8'
     return response
