@@ -164,13 +164,11 @@ class BaseSpider(XMLFeedSpider):
                 urls_in_record.append(url)
         return urls_in_record
 
-    def find_direct_links(self):
-        """Determine if the XML file has a direct link. """
-        print("Looking for the pdf url")
+    def find_direct_links(self, urls_in_record):
+        """Determine if the XML file has a direct link."""
         direct_link = []
-        for link in self.start_urls:  # start_urls should be defined before using this
+        for link in urls_in_record:
             if "pdf" in get_mime_type(link) and "jpg" not in link.lower():
-                # Possibly redirected url
                 direct_link.append(link)
         if direct_link:
             self.logger.info("Found direct link(s): %s", direct_link)
@@ -186,7 +184,7 @@ class BaseSpider(XMLFeedSpider):
         a request to appropriate function to parse the XML.
         """
         urls_in_record = self.get_urls_in_record(node)
-        direct_link = self.find_direct_links()
+        direct_link = self.find_direct_links(urls_in_record)
 
         """There's a problem: it doesn't scrape all records in the file:
         node = Selector(response, type="html")
@@ -249,12 +247,12 @@ class BaseSpider(XMLFeedSpider):
         all_links = response.xpath("//a[contains(@href, 'pdf')]/@href").extract()
         # Take only pdf-links, join relative urls with domain,
         # and remove possible duplicates:
-        domain = parse_domain(response.url)  # extract to utility
+        domain = parse_domain(response.url)
         all_links = sorted(list(set(
             [urljoin(domain, link) for link in all_links if "jpg" not in link.lower()])))
         for link in all_links:
             # Extract only links with pdf in them (checks also headers):
-            pdf = "pdf" in get_mime_type(link) or "pdf" in link.lower()  # extract mime type to utility
+            pdf = "pdf" in get_mime_type(link) or "pdf" in link.lower()
             if pdf and "jpg" not in link.lower():
                 pdf_links.append(urljoin(domain, link))
 
