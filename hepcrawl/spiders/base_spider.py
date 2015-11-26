@@ -37,21 +37,16 @@ class BaseSpider(XMLFeedSpider):
        (Actually it doesn't recognize fulltexts; it's happy when it sees a pdf of some kind.)
        calls: parse_node()
 
-    2a.If direct link exists, it will call parse_with_link() to extract all desired data from
+    2a.If direct link exists, it will call build_item() to extract all desired data from
         the XML file. Data will be put to a HEPrecord item and sent to a pipeline
         for processing.
-        calls: parse_with_link(), then sends to processing pipeline.
+        calls: build_item()
 
     2b.If no direct link exists, it will call scrape_for_pdf() to follow links and
-       extract the pdf url. It will then send a request to parse_with_link() to parse the
-       XML file. This will be a duplicate request, so we have to enable duplicates.
-       calls: scrape_for_pdf()
-
-
-    Duplicate requests filters have been manually disabled for us to be able to
-    send a request to parse the file twice.
-    'DUPEFILTER_CLASS' : 'scrapy.dupefilters.BaseDupeFilter'
-    Better way to do this?
+       extract the pdf url. It will then send a request to build_item() to build HEPrecord.
+       This will be a duplicate request, so we have to enable duplicates by a custom
+       setting 'DUPEFILTER_CLASS' : 'scrapy.dupefilters.BaseDupeFilter'.
+       calls: scrape_for_pdf(), then build_item()
 
 
     Example usage:
@@ -59,20 +54,16 @@ class BaseSpider(XMLFeedSpider):
     scrapy crawl BASE -a source_file=file://`pwd`/tests/responses/base/test_record2.xml -s "JSON_OUTPUT_DIR=tmp/"
 
     TODO:
-    *Namespaces are ignored with brute force. There are better ways?
     *Is the JSON pipeline writing unicode?
     *JSON pipeline is printing an extra comma at the end of the file.
-    (or it's not printing commas between records)
+    (or else it's not printing commas between records)
     *Some Items missing (language, what else?)
-    *Testing of the direct PDF link is not working. The tester doesn't understand
-     multiple requests?
     *Needs more testing with different XML files
-    *CALtech thesis server was asking for a password
-    *It's consistently getting only 184 records when using a test file of 1000 records!
-    *It works when using smaller files.
-    *Testing doesn't work, because parse_node() is not returning items! Is this
-    the wrong way to go? How else can I iterate through all the records? Or should
-    the testing be done differently?
+    *Potentially some problem with author getting, check again (last
+    problem was at least partially because of a typo)
+    *With a test document of 1000 records only 974 returned. Why? Log please.
+    *Testing is not working right now. New errors.
+
 
 
     Happy crawling!
@@ -86,14 +77,20 @@ class BaseSpider(XMLFeedSpider):
 
     # This way you can scrape twice: otherwise duplicate requests are filtered:
     custom_settings = {'DUPEFILTER_CLASS': 'scrapy.dupefilters.BaseDupeFilter',
-                       'MAX_CONCURRENT_REQUESTS_PER_DOMAIN': 5, # Does this help at all?
-                       'LOG_FILE': 'base.log'}
-    # ALSO TRY TO disable cookies?
+                       'MAX_CONCURRENT_REQUESTS_PER_DOMAIN': 5,  # Does this help at all?
+                       'LOG_FILE': 'base.log'}  # Does this log at all?
+
     namespaces = [
         ("OAI-PMH", "http://www.openarchives.org/OAI/2.0/"),
         ("base_dc", "http://oai.base-search.net/base_dc/"),
         ("dc", "http://purl.org/dc/elements/1.1/"),
     ]
+
+    # Try to log everything to find cause of the problems:
+    import logging
+    logging.basicConfig(level=logging.DEBUG, filename="baselog.log", filemode="w",
+                        format="%(asctime)-15s %(levelname)-8s %(message)s")
+    logger = logging.getLogger(__name__)
 
     def __init__(self, source_file=None, *args, **kwargs):
         """Construct BASE spider"""
@@ -108,12 +105,15 @@ class BaseSpider(XMLFeedSpider):
         yield Request(self.source_file)
 
     def get_authors(self, node):
-        """Gets the authors. Probably there is only one author but it's not
-        necessarily in the //creator element. If it's only in the //contributor
+        """Gets the authors.
+
+        Probably there is only one author but it's not
+        necessarily in the creator element. If it's only in the contributor
         element, it's impossible to detect unless it's explicitly declared
         as an author name. As of now, only checks one element with
-        //creator being the first one.
+        creator being the first one.
         """
+
         authors = []
         if node.xpath('.//dc:creator'):
             for author in node.xpath('.//dc:creator/text()'):
@@ -124,7 +124,7 @@ class BaseSpider(XMLFeedSpider):
                     'given_names': given_names,
                     'full_name': author.extract(),
                 })
-        elif node.xpath(".//base_dc:ontributor"):
+        elif node.xpath(".//base_dc:contributor"):
             for author in node.xpath(".//base_dc:contributor/text()"):
                 if any("author" in contr.extract().lower() for contr in node.xpath(".//base_dc:contributor/text()")):
                     # Should we only use full_name?
@@ -140,7 +140,8 @@ class BaseSpider(XMLFeedSpider):
     def get_urls_in_record(self, node):
         """Return all the different urls in the xml.
 
-        Urls might be stored in identifier, relation, or link element.
+        Urls might be stored in identifier, relation, or link element. Beware
+        the strange "filaname.jpg.pdf" urls.
         """
         identifiers = [
             identifier for identifier in node.xpath(".//dc:identifier/text()").extract()
@@ -190,7 +191,7 @@ class BaseSpider(XMLFeedSpider):
         node = Selector(response, type="html")
         print("RECORD COUNT:", node.xpath("count(.//*[local-name() =   '" + self.itertag + "'])").extract() )
         gives 1000, as it should be
-        BUT why there will be only 184 results??
+        Now it writes 974 records, that is better!
 
         Australian thesis collection also gives errors:
         [<twisted.python.failure.Failure twisted.internet.error.ConnectionDone: Connection was closed cleanly.>]
@@ -231,14 +232,13 @@ class BaseSpider(XMLFeedSpider):
         # Should this be able to scrape all kinds of publications?
         # Now does only theses:
         record.add_value('thesis', {'degree_type': 'PhD'})
-        # Items still missing: language,... what else?
         record.add_value("authors", self.get_authors(node))
         return record.load_item()
 
     def scrape_for_pdf(self, response):
         """Scrape splash page for any links to PDFs.
 
-        If direct link didn't exists, x`parse_node() will yield a request
+        If direct link didn't exists, parse_node() will yield a request
         here to scrape the urls. This will find a direct pdf link from a
         splash page, if it exists. Then it will send a request to
         parse_with_link() to parse the XML node.
