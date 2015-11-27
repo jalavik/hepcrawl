@@ -12,7 +12,6 @@
 from __future__ import absolute_import, print_function
 
 import os
-import re
 
 from urlparse import urljoin
 
@@ -58,12 +57,9 @@ class BaseSpider(XMLFeedSpider):
     *JSON pipeline is printing an extra comma at the end of the file.
     (or else it's not printing commas between records)
     *Some Items missing (language, what else?)
-    *Needs more testing with different XML files
-    *Potentially some problem with author getting, check again (last
-    problem was at least partially because of a typo)
-    *With a test document of 1000 records only 974 returned. Why? Log please.
-    *Testing is not working right now. New errors.
-
+    *With a test document of 1000 records only 974 returned.
+    *SSL errors, this helps? http://stackoverflow.com/questions/32950694/disable-ssl-certificate-verification-in-scrapy
+    *Testing is not testing the pdf link and urls. Otherwise it's working.
 
 
     Happy crawling!
@@ -85,12 +81,6 @@ class BaseSpider(XMLFeedSpider):
         ("base_dc", "http://oai.base-search.net/base_dc/"),
         ("dc", "http://purl.org/dc/elements/1.1/"),
     ]
-
-    # Try to log everything to find cause of the problems:
-    import logging
-    logging.basicConfig(level=logging.DEBUG, filename="baselog.log", filemode="w",
-                        format="%(asctime)-15s %(levelname)-8s %(message)s")
-    logger = logging.getLogger(__name__)
 
     def __init__(self, source_file=None, *args, **kwargs):
         """Construct BASE spider"""
@@ -126,14 +116,15 @@ class BaseSpider(XMLFeedSpider):
                 })
         elif node.xpath(".//base_dc:contributor"):
             for author in node.xpath(".//base_dc:contributor/text()"):
-                if any("author" in contr.extract().lower() for contr in node.xpath(".//base_dc:contributor/text()")):
+                if "author" in author.extract().lower():
                     # Should we only use full_name?
+                    cleaned_author = author.extract().replace('(Author)', '').strip()
                     surname, given_names = split_fullname(
-                        author.extract())
+                        cleaned_author)
                     authors.append({
                         'surname': surname,
                         'given_names': given_names,
-                        'full_name': author.extract(),
+                        'full_name': cleaned_author,
                     })
         return authors
 
@@ -186,21 +177,6 @@ class BaseSpider(XMLFeedSpider):
         """
         urls_in_record = self.get_urls_in_record(node)
         direct_link = self.find_direct_links(urls_in_record)
-
-        """There's a problem: it doesn't scrape all records in the file:
-        node = Selector(response, type="html")
-        print("RECORD COUNT:", node.xpath("count(.//*[local-name() =   '" + self.itertag + "'])").extract() )
-        gives 1000, as it should be
-        Now it writes 974 records, that is better!
-
-        Australian thesis collection also gives errors:
-        [<twisted.python.failure.Failure twisted.internet.error.ConnectionDone: Connection was closed cleanly.>]
-        Number of australian records:
-        count(.//*[local-name() ="record"]//*[local-name()='identifier' and
-        contains(text(), "hdl.handle.net") or
-        contains(text(), digitalcollections.anu.edu.au")])
-        ---> result: 432
-        """
 
         if not direct_link and urls_in_record:
             # Probably all links lead to same place, so take first
