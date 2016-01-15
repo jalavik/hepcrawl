@@ -84,3 +84,38 @@ OA_LICENSES = [
     r'^OA$',
     r'^Open Access$'
 ]
+
+CONFERENCE_PAPERS = [
+    'colloquium',
+    'colloquiums',
+    'conf',
+    'conference',
+    'conferences',
+    'contrib',
+    'contributed',
+    'contribution',
+    'contributions',
+    'forum',
+    'lecture',
+    'lectures',
+    'meeting',
+    'meetings',
+    'pres',
+    'presented',
+    'proc',
+    'proceeding',
+    'proceedings',
+    'rencontre',
+    'rencontres',
+    'school',
+    'schools',
+    'seminar',
+    'seminars',
+    'symp',
+    'symposium',
+    'symposiums',
+    'talk',
+    'talks',
+    'workshop',
+    'workshops'
+]
