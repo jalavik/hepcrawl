@@ -20,7 +20,11 @@ from ..loaders import HEPLoader
 class ArxivSpider(XMLFeedSpider):
 
     name = 'Arxiv'
-    itertag = 'record'
+    iterator = 'xml'
+    itertag = 'OAI-PMH:record'
+    namespaces = [
+        ("OAI-PMH", "http://www.openarchives.org/OAI/2.0/"),
+    ]
 
     def __init__(self, source_file=None, **kwargs):
         """Construct Arxiv spider."""
@@ -31,6 +35,8 @@ class ArxivSpider(XMLFeedSpider):
         yield Request(self.source_file)
 
     def parse_node(self, response, node):
+
+
         node.remove_namespaces()
 
         record = HEPLoader(item=HEPRecord(), selector=node, response=response)

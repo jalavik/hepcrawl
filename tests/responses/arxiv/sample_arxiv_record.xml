@@ -1,4 +1,4 @@
-<OAI-PMH xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/ http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd">
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/ http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd">
     <responseDate>2016-01-14T15:53:12Z</responseDate>
     <request verb="GetRecord" identifier="oai:arXiv.org:1601.03238" metadataPrefix="arXiv">http://export.arxiv.org/oai2</request>
     <GetRecord>
